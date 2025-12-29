@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Space Zombie Swarm</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Arial', sans-serif;
+            overflow: hidden;
+        }
+        
+        #gameCanvas {
+            border: 2px solid #00ffff;
+            background: linear-gradient(180deg, #001122 0%, #000033 100%);
+            box-shadow: 0 0 20px #00ffff;
+        }
+        
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #00ffff;
+            font-size: 18px;
+            z-index: 10;
+        }
+        
+        #gameOver {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #ff0066;
+            text-align: center;
+            font-size: 24px;
+            display: none;
+            z-index: 20;
+        }
+        
+        button {
+            background: #00ffff;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="400"></canvas>
+    <div id="ui">
+        <div>Swarm Size: <span id="swarmSize">3</span></div>
+        <div>Score: <span id="score">0</span></div>
+        <div>Crystals: <span id="crystals">0</span></div>
+    </div>
+    <div id="gameOver">
+        <h2>SWARM ELIMINATED!</h2>
+        <p>Final Score: <span id="finalScore">0</span></p>
+        <button onclick="game.restart()">RESTART MISSION</button>
+    </div>
+    
+    <script src="game.js"></script>
+</body>
+</html>
