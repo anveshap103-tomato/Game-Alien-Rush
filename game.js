@@ -5,7 +5,7 @@ class Game {
         this.width = this.canvas.width;
         this.height = this.canvas.height;
         
-        this.swarm = [];
+        this.aliens = [];
         this.obstacles = [];
         this.collectibles = [];
         this.powerUps = [];
@@ -28,9 +28,9 @@ class Game {
     }
     
     init() {
-        // Initialize swarm with 3 space zombies
+        // Initialize alien pack with 3 aliens
         for (let i = 0; i < 3; i++) {
-            this.swarm.push(new SpaceZombie(100 + i * 30, this.height - 80));
+            this.aliens.push(new Alien(100 + i * 30, this.height - 80));
         }
     }
     
@@ -65,8 +65,8 @@ class Game {
         this.spawnTimer++;
         this.powerUpTimer++;
         
-        // Update swarm physics
-        this.updateSwarm();
+        // Update alien physics
+        this.updateAliens();
         
         // Spawn obstacles and collectibles
         if (this.spawnTimer > 120) {
@@ -93,14 +93,14 @@ class Game {
         this.checkCollisions();
         
         // Game over condition
-        if (this.swarm.length === 0) {
+        if (this.aliens.length === 0) {
             this.gameOver();
         }
         
         this.updateUI();
     }
     
-    updateSwarm() {
+    updateAliens() {
         // Handle jumping physics
         if (this.isJumping) {
             this.jumpPower -= 0.8;
@@ -110,25 +110,25 @@ class Game {
             }
         }
         
-        // Update each zombie in swarm
-        this.swarm.forEach((zombie, index) => {
-            zombie.update();
+        // Update each alien in pack
+        this.aliens.forEach((alien, index) => {
+            alien.update();
             
-            // Apply jump to all zombies
+            // Apply jump to all aliens
             if (this.isJumping) {
-                zombie.y -= this.jumpPower;
+                alien.y -= this.jumpPower;
             } else {
                 // Gravity
-                if (zombie.y < this.height - 80) {
-                    zombie.y += 8;
+                if (alien.y < this.height - 80) {
+                    alien.y += 8;
                 } else {
-                    zombie.y = this.height - 80;
+                    alien.y = this.height - 80;
                 }
             }
             
             // Formation movement
-            zombie.targetX = 100 + index * 25;
-            zombie.x += (zombie.targetX - zombie.x) * 0.1;
+            alien.targetX = 100 + index * 25;
+            alien.x += (alien.targetX - alien.x) * 0.1;
         });
     }
     
@@ -185,20 +185,20 @@ class Game {
     checkCollisions() {
         // Check obstacle collisions
         this.obstacles.forEach(obstacle => {
-            this.swarm.forEach((zombie, index) => {
-                if (this.isColliding(zombie, obstacle)) {
-                    this.swarm.splice(index, 1);
-                    this.createExplosion(zombie.x, zombie.y);
+            this.aliens.forEach((alien, index) => {
+                if (this.isColliding(alien, obstacle)) {
+                    this.aliens.splice(index, 1);
+                    this.createExplosion(alien.x, alien.y);
                 }
             });
         });
         
         // Check collectible collisions
         this.collectibles.forEach((collectible, cIndex) => {
-            this.swarm.forEach(zombie => {
-                if (this.isColliding(zombie, collectible)) {
+            this.aliens.forEach(alien => {
+                if (this.isColliding(alien, collectible)) {
                     if (collectible.type === 'astronaut') {
-                        this.swarm.push(new SpaceZombie(zombie.x - 30, zombie.y));
+                        this.aliens.push(new Alien(alien.x - 30, alien.y));
                         this.createInfectionEffect(collectible.x, collectible.y);
                     } else if (collectible.type === 'crystal') {
                         this.crystals += 10;
@@ -211,8 +211,8 @@ class Game {
         
         // Check power-up collisions
         this.powerUps.forEach((powerUp, pIndex) => {
-            this.swarm.forEach(zombie => {
-                if (this.isColliding(zombie, powerUp)) {
+            this.aliens.forEach(alien => {
+                if (this.isColliding(alien, powerUp)) {
                     this.activatePowerUp(powerUp.type);
                     this.powerUps.splice(pIndex, 1);
                 }
@@ -233,8 +233,8 @@ class Game {
                 // Temporary invincibility
                 break;
             case 'clone':
-                if (this.swarm.length > 0) {
-                    this.swarm.push(new SpaceZombie(this.swarm[0].x - 30, this.swarm[0].y));
+                if (this.aliens.length > 0) {
+                    this.aliens.push(new Alien(this.aliens[0].x - 30, this.aliens[0].y));
                 }
                 break;
             case 'phase':
@@ -270,7 +270,7 @@ class Game {
         this.drawBackground();
         
         // Draw game objects
-        this.swarm.forEach(zombie => zombie.draw(this.ctx));
+        this.aliens.forEach(alien => alien.draw(this.ctx));
         this.obstacles.forEach(obstacle => obstacle.draw(this.ctx));
         this.collectibles.forEach(collectible => collectible.draw(this.ctx));
         this.powerUps.forEach(powerUp => powerUp.draw(this.ctx));
@@ -296,7 +296,7 @@ class Game {
     }
     
     updateUI() {
-        document.getElementById('swarmSize').textContent = this.swarm.length;
+        document.getElementById('swarmSize').textContent = this.aliens.length;
         document.getElementById('score').textContent = Math.floor(this.score);
         document.getElementById('crystals').textContent = this.crystals;
     }
@@ -308,7 +308,7 @@ class Game {
     }
     
     restart() {
-        this.swarm = [];
+        this.aliens = [];
         this.obstacles = [];
         this.collectibles = [];
         this.powerUps = [];
@@ -330,7 +330,7 @@ class Game {
     }
 }
 
-class SpaceZombie {
+class Alien {
     constructor(x, y) {
         this.x = x;
         this.y = y;
