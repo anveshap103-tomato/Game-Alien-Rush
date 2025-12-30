@@ -1,3 +1,159 @@
+class SolarFlareManager {
+    constructor(game) {
+        this.game = game;
+        this.isActive = false;
+        this.hasSpawned = false;
+        this.duration = 8000; // 8 seconds in milliseconds
+        this.startTime = 0;
+        this.waveX = -200;
+        this.particles = [];
+        this.screenShake = 0;
+    }
+    
+    canSpawn() {
+        return this.game.score >= 2000 && !this.hasSpawned && !this.isActive;
+    }
+    
+    trySpawn() {
+        if (this.canSpawn() && Math.random() < 0.002) { // 0.2% chance per frame after score 2000
+            this.activateSolarFlare();
+        }
+    }
+    
+    activateSolarFlare() {
+        this.isActive = true;
+        this.hasSpawned = true;
+        this.startTime = Date.now();
+        this.waveX = -200;
+        this.screenShake = 10;
+        this.createWaveParticles();
+    }
+    
+    deactivateSolarFlare() {
+        this.isActive = false;
+        this.waveX = -200;
+        this.particles = [];
+        this.screenShake = 0;
+    }
+    
+    update() {
+        if (!this.isActive) return;
+        
+        const elapsed = Date.now() - this.startTime;
+        if (elapsed >= this.duration) {
+            this.deactivateSolarFlare();
+            return;
+        }
+        
+        // Move wave across screen
+        this.waveX += 8;
+        
+        // Update screen shake
+        if (this.screenShake > 0) {
+            this.screenShake *= 0.95;
+        }
+        
+        // Update particles
+        this.updateParticles();
+        
+        // Auto-collect items and destroy obstacles
+        this.processWaveEffects();
+    }
+    
+    createWaveParticles() {
+        for (let i = 0; i < 50; i++) {
+            this.particles.push({
+                x: this.waveX + Math.random() * 100,
+                y: Math.random() * this.game.height,
+                vx: Math.random() * 4 + 2,
+                vy: (Math.random() - 0.5) * 2,
+                life: 60,
+                maxLife: 60
+            });
+        }
+    }
+    
+    updateParticles() {
+        // Add new particles at wave front
+        if (Math.random() < 0.3) {
+            this.particles.push({
+                x: this.waveX + Math.random() * 50,
+                y: Math.random() * this.game.height,
+                vx: Math.random() * 3 + 1,
+                vy: (Math.random() - 0.5) * 2,
+                life: 40,
+                maxLife: 40
+            });
+        }
+        
+        this.particles = this.particles.filter(p => {
+            p.x += p.vx;
+            p.y += p.vy;
+            p.life--;
+            return p.life > 0;
+        });
+    }
+    
+    processWaveEffects() {
+        // Destroy obstacles in wave path
+        this.game.obstacles = this.game.obstacles.filter(obstacle => {
+            if (obstacle.x < this.waveX + 100 && obstacle.x > this.waveX - 50) {
+                this.game.createExplosion(obstacle.x, obstacle.y);
+                return false;
+            }
+            return true;
+        });
+        
+        // Auto-collect collectibles
+        this.game.collectibles = this.game.collectibles.filter(collectible => {
+            if (collectible.x < this.waveX + 100 && collectible.x > this.waveX - 50) {
+                if (collectible.type === 'astronaut') {
+                    this.game.aliens.push(new Alien(this.game.aliens[0]?.x - 30 || 100, this.game.height - 80));
+                    this.game.score += 100; // Award points for astronaut
+                    this.game.createInfectionEffect(collectible.x, collectible.y);
+                } else if (collectible.type === 'crystal') {
+                    this.game.crystals += 10;
+                    this.game.score += 50; // Award points for crystal
+                    this.game.createSparkles(collectible.x, collectible.y);
+                }
+                return false;
+            }
+            return true;
+        });
+    }
+    
+    getRemainingTime() {
+        if (!this.isActive) return 0;
+        const elapsed = Date.now() - this.startTime;
+        return Math.max(0, Math.ceil((this.duration - elapsed) / 1000));
+    }
+    
+    draw(ctx) {
+        if (!this.isActive) return;
+        
+        // Draw main wave
+        const gradient = ctx.createLinearGradient(this.waveX, 0, this.waveX + 200, 0);
+        gradient.addColorStop(0, 'rgba(255, 165, 0, 0)');
+        gradient.addColorStop(0.3, 'rgba(255, 140, 0, 0.8)');
+        gradient.addColorStop(0.7, 'rgba(255, 69, 0, 0.6)');
+        gradient.addColorStop(1, 'rgba(255, 165, 0, 0)');
+        
+        ctx.fillStyle = gradient;
+        ctx.fillRect(this.waveX, 0, 200, this.game.height);
+        
+        // Draw particles
+        this.particles.forEach(p => {
+            const alpha = p.life / p.maxLife;
+            ctx.fillStyle = `rgba(255, 140, 0, ${alpha})`;
+            ctx.shadowColor = '#ff8c00';
+            ctx.shadowBlur = 5;
+            ctx.fillRect(p.x, p.y, 3, 3);
+        });
+        
+        ctx.shadowBlur = 0;
+    }
+}
+
 class Game {
     constructor() {
         this.canvas = document.getElementById('gameCanvas');
@@ -21,6 +177,8 @@ class Game {
         this.spawnTimer = 0;
         this.powerUpTimer = 0;
         this.backgroundOffset = 0;
+        
+        this.solarFlare = new SolarFlareManager(this);
         
         this.init();
         this.bindEvents();
@@ -65,6 +223,10 @@ class Game {
         this.spawnTimer++;
         this.powerUpTimer++;
         
+        // Update Solar Flare
+        this.solarFlare.trySpawn();
+        this.solarFlare.update();
+        
         // Update alien physics
         this.updateAliens();
         
@@ -89,8 +251,10 @@ class Game {
         this.updatePowerUps();
         this.updateParticles();
         
-        // Check collisions
-        this.checkCollisions();
+        // Check collisions (skip if solar flare active for invincibility)
+        if (!this.solarFlare.isActive) {
+            this.checkCollisions();
+        }
         
         // Game over condition
         if (this.aliens.length === 0) {
@@ -262,6 +426,14 @@ class Game {
     }
     
     render() {
+        // Apply screen shake if solar flare active
+        this.ctx.save();
+        if (this.solarFlare.screenShake > 0) {
+            const shakeX = (Math.random() - 0.5) * this.solarFlare.screenShake;
+            const shakeY = (Math.random() - 0.5) * this.solarFlare.screenShake;
+            this.ctx.translate(shakeX, shakeY);
+        }
+        
         // Clear canvas
         this.ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
         this.ctx.fillRect(0, 0, this.width, this.height);
@@ -275,6 +447,14 @@ class Game {
         this.collectibles.forEach(collectible => collectible.draw(this.ctx));
         this.powerUps.forEach(powerUp => powerUp.draw(this.ctx));
         this.particles.forEach(particle => particle.draw(this.ctx));
+        
+        // Draw solar flare effect
+        this.solarFlare.draw(this.ctx);
+        
+        this.ctx.restore();
+        
+        // Draw UI (not affected by screen shake)
+        this.drawSolarFlareUI();
     }
     
     drawBackground() {
@@ -307,6 +487,18 @@ class Game {
         document.getElementById('gameOver').style.display = 'block';
     }
     
+    drawSolarFlareUI() {
+        if (this.solarFlare.isActive) {
+            const remaining = this.solarFlare.getRemainingTime();
+            this.ctx.fillStyle = '#ff8c00';
+            this.ctx.font = 'bold 20px Arial';
+            this.ctx.shadowColor = '#ff8c00';
+            this.ctx.shadowBlur = 10;
+            this.ctx.fillText(`SOLAR FLARE ACTIVE - ${remaining}s`, this.width / 2 - 120, 50);
+            this.ctx.shadowBlur = 0;
+        }
+    }
+    
     restart() {
         this.aliens = [];
         this.obstacles = [];
@@ -318,6 +510,8 @@ class Game {
         this.isGameOver = false;
         this.isJumping = false;
         this.jumpPower = 0;
+        
+        this.solarFlare = new SolarFlareManager(this);
         
         document.getElementById('gameOver').style.display = 'none';
         this.init();
