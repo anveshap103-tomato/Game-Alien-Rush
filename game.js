@@ -182,6 +182,9 @@ class Game {
         this.isFlying = false;
         this.flyTimer = 0;
         this.flyDuration = 10000;
+        this.isDescending = false;
+        this.descendTimer = 0;
+        this.descendDuration = 1500;
         
         this.init();
         this.bindEvents();
@@ -224,15 +227,26 @@ class Game {
         document.addEventListener('keydown', (e) => {
             if (e.code === 'Space') {
                 e.preventDefault();
-                this.jump();
+                if (this.isFlying && !this.isDescending) {
+                    this.startDescent();
+                } else {
+                    this.jump();
+                }
             }
         });
     }
     
     jump() {
-        if (!this.isGameOver && !this.isJumping) {
+        if (!this.isGameOver && !this.isJumping && !this.isFlying) {
             this.isJumping = true;
             this.jumpPower = 15;
+        }
+    }
+    
+    startDescent() {
+        if (this.isFlying && !this.isDescending) {
+            this.isDescending = true;
+            this.descendTimer = this.descendDuration;
         }
     }
     
@@ -256,6 +270,14 @@ class Game {
             this.flyTimer -= 16; // ~60fps
             if (this.flyTimer <= 0) {
                 this.endUfoMode();
+            }
+            
+            // Handle descent mechanic
+            if (this.isDescending) {
+                this.descendTimer -= 16;
+                if (this.descendTimer <= 0) {
+                    this.isDescending = false;
+                }
             }
         }
         
@@ -284,9 +306,13 @@ class Game {
         this.updatePowerUps();
         this.updateParticles();
         
-        // Check collisions (skip if solar flare active or flying)
-        if (!this.solarFlare.isActive && !this.isFlying) {
-            this.checkCollisions();
+        // Check collisions (skip obstacles if solar flare active or flying high)
+        if (!this.solarFlare.isActive) {
+            if (!this.isFlying || this.isDescending) {
+                this.checkObstacleCollisions();
+            }
+            this.checkCollectibleCollisions();
+            this.checkPowerUpCollisions();
         }
         
         // Game over condition
@@ -298,7 +324,8 @@ class Game {
     }
     
     updateAliens() {
-        const flyHeight = this.height - 200 * this.scale;
+        const flyHeight = this.height - 300 * this.scale;
+        const groundHeight = this.height - 80 * this.scale;
         
         // Handle jumping physics (only when not flying)
         if (this.isJumping && !this.isFlying) {
@@ -314,24 +341,38 @@ class Game {
             alien.update();
             
             if (this.isFlying) {
-                // Flying mode - move to fly height
-                alien.y += (flyHeight - alien.y) * 0.1;
+                let targetHeight = flyHeight;
+                
+                if (this.isDescending) {
+                    // Descend to ground level for crystal collection
+                    const descendProgress = 1 - (this.descendTimer / this.descendDuration);
+                    const easeOut = 1 - Math.pow(1 - descendProgress, 3);
+                    targetHeight = flyHeight + (groundHeight - flyHeight) * easeOut;
+                }
+                
+                // Smooth movement to target height
+                alien.y += (targetHeight - alien.y) * 0.15;
             } else {
                 // Normal mode - apply jump or gravity
                 if (this.isJumping) {
                     alien.y -= this.jumpPower * this.scale;
                 } else {
-                    if (alien.y < this.height - 80 * this.scale) {
+                    if (alien.y < groundHeight) {
                         alien.y += 8 * this.scale;
                     } else {
-                        alien.y = this.height - 80 * this.scale;
+                        alien.y = groundHeight;
                     }
                 }
             }
             
-            // Formation movement
+            // Formation movement with playful bobbing in flight
             alien.targetX = 100 * this.scale + index * 25 * this.scale;
             alien.x += (alien.targetX - alien.x) * 0.1;
+            
+            // Add subtle bobbing effect during flight
+            if (this.isFlying && !this.isDescending) {
+                alien.y += Math.sin(Date.now() * 0.003 + index) * 2;
+            }
         });
     }
     
@@ -389,8 +430,7 @@ class Game {
         });
     }
     
-    checkCollisions() {
-        // Check obstacle collisions
+    checkObstacleCollisions() {
         this.obstacles.forEach(obstacle => {
             this.aliens.forEach((alien, index) => {
                 if (this.isColliding(alien, obstacle)) {
@@ -399,8 +439,9 @@ class Game {
                 }
             });
         });
-        
-        // Check collectible collisions
+    }
+    
+    checkCollectibleCollisions() {
         this.collectibles.forEach((collectible, cIndex) => {
             this.aliens.forEach(alien => {
                 if (this.isColliding(alien, collectible)) {
@@ -408,8 +449,13 @@ class Game {
                         this.aliens.push(new Alien(alien.x - 30, alien.y));
                         this.createInfectionEffect(collectible.x, collectible.y);
                     } else if (collectible.type === 'crystal') {
-                        this.crystals += 10;
+                        const bonus = this.isDescending ? 20 : 10;
+                        this.crystals += bonus;
+                        this.score += bonus * 5;
                         this.createSparkles(collectible.x, collectible.y);
+                        if (this.isDescending) {
+                            this.createDescentBonus(collectible.x, collectible.y);
+                        }
                     } else if (collectible.type === 'ufo') {
                         this.startUfoMode();
                     }
@@ -417,8 +463,9 @@ class Game {
                 }
             });
         });
-        
-        // Check power-up collisions
+    }
+    
+    checkPowerUpCollisions() {
         this.powerUps.forEach((powerUp, pIndex) => {
             this.aliens.forEach(alien => {
                 if (this.isColliding(alien, powerUp)) {
@@ -460,6 +507,8 @@ class Game {
     endUfoMode() {
         this.isFlying = false;
         this.flyTimer = 0;
+        this.isDescending = false;
+        this.descendTimer = 0;
     }
     
     createExplosion(x, y) {
@@ -477,6 +526,12 @@ class Game {
     createSparkles(x, y) {
         for (let i = 0; i < 6; i++) {
             this.particles.push(new Particle(x, y, '#00ffff', 'sparkle'));
+        }
+    }
+    
+    createDescentBonus(x, y) {
+        for (let i = 0; i < 10; i++) {
+            this.particles.push(new Particle(x, y, '#ffff00', 'bonus'));
         }
     }
     
@@ -562,7 +617,19 @@ class Game {
             this.ctx.font = `bold ${Math.max(16, 20 * this.scale)}px Arial`;
             this.ctx.shadowColor = '#00ffff';
             this.ctx.shadowBlur = 10;
-            this.ctx.fillText(`UFO MODE ACTIVE - ${remaining}s`, this.width / 2 - 100 * this.scale, 80 * this.scale);
+            this.ctx.fillText(`UFO MODE - ${remaining}s`, this.width / 2 - 80 * this.scale, 80 * this.scale);
+            
+            // Show descent instruction
+            if (!this.isDescending) {
+                this.ctx.fillStyle = '#ffff00';
+                this.ctx.font = `${Math.max(12, 14 * this.scale)}px Arial`;
+                this.ctx.fillText('Press SPACE to dive for crystals!', this.width / 2 - 90 * this.scale, 100 * this.scale);
+            } else {
+                this.ctx.fillStyle = '#ff69b4';
+                this.ctx.font = `${Math.max(12, 14 * this.scale)}px Arial`;
+                this.ctx.fillText('DIVING FOR CRYSTALS!', this.width / 2 - 70 * this.scale, 100 * this.scale);
+            }
+            
             this.ctx.shadowBlur = 0;
         }
     }
@@ -578,6 +645,10 @@ class Game {
         this.isGameOver = false;
         this.isJumping = false;
         this.jumpPower = 0;
+        this.isFlying = false;
+        this.flyTimer = 0;
+        this.isDescending = false;
+        this.descendTimer = 0;
         
         this.setupCanvas();
         this.solarFlare = new SolarFlareManager(this);
