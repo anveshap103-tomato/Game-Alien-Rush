@@ -108,7 +108,7 @@ class SolarFlareManager {
         this.game.collectibles = this.game.collectibles.filter(collectible => {
             if (collectible.x < this.waveX + 100 && collectible.x > this.waveX - 50) {
                 if (collectible.type === 'astronaut') {
-                    this.game.aliens.push(new Alien(this.game.aliens[0]?.x - 30 || 100, this.game.height - 80));
+                    this.game.aliens.push(new Alien(this.game.aliens[0]?.x - 30 * this.game.scale || 100 * this.game.scale, this.game.height - 80 * this.game.scale));
                     this.game.score += 100; // Award points for astronaut
                     this.game.createInfectionEffect(collectible.x, collectible.y);
                 } else if (collectible.type === 'crystal') {
@@ -158,8 +158,8 @@ class Game {
     constructor() {
         this.canvas = document.getElementById('gameCanvas');
         this.ctx = this.canvas.getContext('2d');
-        this.width = this.canvas.width;
-        this.height = this.canvas.height;
+        
+        this.setupCanvas();
         
         this.aliens = [];
         this.obstacles = [];
@@ -179,16 +179,37 @@ class Game {
         this.backgroundOffset = 0;
         
         this.solarFlare = new SolarFlareManager(this);
+        this.isFlying = false;
+        this.flyTimer = 0;
+        this.flyDuration = 10000;
         
         this.init();
         this.bindEvents();
         this.gameLoop();
     }
     
+    setupCanvas() {
+        const isMobile = window.innerWidth <= 768;
+        
+        if (isMobile) {
+            this.width = Math.min(window.innerWidth - 10, 600);
+            this.height = Math.min(window.innerHeight - 10, 300);
+        } else {
+            this.width = Math.min(window.innerWidth - 40, 800);
+            this.height = Math.min(window.innerHeight - 40, 400);
+        }
+        
+        this.canvas.width = this.width;
+        this.canvas.height = this.height;
+        
+        // Scale factor for responsive positioning
+        this.scale = this.width / 800;
+    }
+    
     init() {
         // Initialize alien pack with 3 aliens
         for (let i = 0; i < 3; i++) {
-            this.aliens.push(new Alien(100 + i * 30, this.height - 80));
+            this.aliens.push(new Alien(100 * this.scale + i * 30 * this.scale, this.height - 80 * this.scale));
         }
     }
     
@@ -230,6 +251,14 @@ class Game {
         // Update alien physics
         this.updateAliens();
         
+        // Update UFO flying mode
+        if (this.isFlying) {
+            this.flyTimer -= 16; // ~60fps
+            if (this.flyTimer <= 0) {
+                this.endUfoMode();
+            }
+        }
+        
         // Spawn obstacles and collectibles
         if (this.spawnTimer > 120) {
             this.spawnObstacle();
@@ -238,6 +267,10 @@ class Game {
         
         if (Math.random() < 0.01) {
             this.spawnCollectible();
+        }
+        
+        if (this.score >= 1000 && Math.random() < 0.003) {
+            this.spawnUFO();
         }
         
         if (this.powerUpTimer > 600 && Math.random() < 0.005) {
@@ -251,8 +284,8 @@ class Game {
         this.updatePowerUps();
         this.updateParticles();
         
-        // Check collisions (skip if solar flare active for invincibility)
-        if (!this.solarFlare.isActive) {
+        // Check collisions (skip if solar flare active or flying)
+        if (!this.solarFlare.isActive && !this.isFlying) {
             this.checkCollisions();
         }
         
@@ -265,8 +298,10 @@ class Game {
     }
     
     updateAliens() {
-        // Handle jumping physics
-        if (this.isJumping) {
+        const flyHeight = this.height - 200 * this.scale;
+        
+        // Handle jumping physics (only when not flying)
+        if (this.isJumping && !this.isFlying) {
             this.jumpPower -= 0.8;
             if (this.jumpPower <= 0) {
                 this.isJumping = false;
@@ -278,20 +313,24 @@ class Game {
         this.aliens.forEach((alien, index) => {
             alien.update();
             
-            // Apply jump to all aliens
-            if (this.isJumping) {
-                alien.y -= this.jumpPower;
+            if (this.isFlying) {
+                // Flying mode - move to fly height
+                alien.y += (flyHeight - alien.y) * 0.1;
             } else {
-                // Gravity
-                if (alien.y < this.height - 80) {
-                    alien.y += 8;
+                // Normal mode - apply jump or gravity
+                if (this.isJumping) {
+                    alien.y -= this.jumpPower * this.scale;
                 } else {
-                    alien.y = this.height - 80;
+                    if (alien.y < this.height - 80 * this.scale) {
+                        alien.y += 8 * this.scale;
+                    } else {
+                        alien.y = this.height - 80 * this.scale;
+                    }
                 }
             }
             
             // Formation movement
-            alien.targetX = 100 + index * 25;
+            alien.targetX = 100 * this.scale + index * 25 * this.scale;
             alien.x += (alien.targetX - alien.x) * 0.1;
         });
     }
@@ -299,23 +338,27 @@ class Game {
     spawnObstacle() {
         const types = ['laser', 'mine', 'barrier'];
         const type = types[Math.floor(Math.random() * types.length)];
-        this.obstacles.push(new Obstacle(this.width, this.height - 80, type));
+        this.obstacles.push(new Obstacle(this.width, this.height - 80 * this.scale, type, this.scale));
     }
     
     spawnCollectible() {
         if (Math.random() < 0.7) {
             // Spawn astronaut to infect
-            this.collectibles.push(new Astronaut(this.width, this.height - 80));
+            this.collectibles.push(new Astronaut(this.width, this.height - 80 * this.scale, this.scale));
         } else {
             // Spawn crystal
-            this.collectibles.push(new Crystal(this.width, this.height - 100));
+            this.collectibles.push(new Crystal(this.width, this.height - 100 * this.scale, this.scale));
         }
+    }
+    
+    spawnUFO() {
+        this.collectibles.push(new UFOCollectible(this.width, this.height - 120 * this.scale, this.scale));
     }
     
     spawnPowerUp() {
         const types = ['shield', 'clone', 'phase'];
         const type = types[Math.floor(Math.random() * types.length)];
-        this.powerUps.push(new PowerUp(this.width, this.height - 100, type));
+        this.powerUps.push(new PowerUp(this.width, this.height - 100 * this.scale, type, this.scale));
     }
     
     updateObstacles() {
@@ -367,6 +410,8 @@ class Game {
                     } else if (collectible.type === 'crystal') {
                         this.crystals += 10;
                         this.createSparkles(collectible.x, collectible.y);
+                    } else if (collectible.type === 'ufo') {
+                        this.startUfoMode();
                     }
                     this.collectibles.splice(cIndex, 1);
                 }
@@ -398,13 +443,23 @@ class Game {
                 break;
             case 'clone':
                 if (this.aliens.length > 0) {
-                    this.aliens.push(new Alien(this.aliens[0].x - 30, this.aliens[0].y));
+                    this.aliens.push(new Alien(this.aliens[0].x - 30 * this.scale, this.aliens[0].y));
                 }
                 break;
             case 'phase':
                 // Temporary phase through obstacles
                 break;
         }
+    }
+    
+    startUfoMode() {
+        this.isFlying = true;
+        this.flyTimer = this.flyDuration;
+    }
+    
+    endUfoMode() {
+        this.isFlying = false;
+        this.flyTimer = 0;
     }
     
     createExplosion(x, y) {
@@ -455,6 +510,7 @@ class Game {
         
         // Draw UI (not affected by screen shake)
         this.drawSolarFlareUI();
+        this.drawUfoModeUI();
     }
     
     drawBackground() {
@@ -491,10 +547,22 @@ class Game {
         if (this.solarFlare.isActive) {
             const remaining = this.solarFlare.getRemainingTime();
             this.ctx.fillStyle = '#ff8c00';
-            this.ctx.font = 'bold 20px Arial';
+            this.ctx.font = `bold ${Math.max(16, 20 * this.scale)}px Arial`;
             this.ctx.shadowColor = '#ff8c00';
             this.ctx.shadowBlur = 10;
-            this.ctx.fillText(`SOLAR FLARE ACTIVE - ${remaining}s`, this.width / 2 - 120, 50);
+            this.ctx.fillText(`SOLAR FLARE ACTIVE - ${remaining}s`, this.width / 2 - 120 * this.scale, 50 * this.scale);
+            this.ctx.shadowBlur = 0;
+        }
+    }
+    
+    drawUfoModeUI() {
+        if (this.isFlying) {
+            const remaining = Math.ceil(this.flyTimer / 1000);
+            this.ctx.fillStyle = '#00ffff';
+            this.ctx.font = `bold ${Math.max(16, 20 * this.scale)}px Arial`;
+            this.ctx.shadowColor = '#00ffff';
+            this.ctx.shadowBlur = 10;
+            this.ctx.fillText(`UFO MODE ACTIVE - ${remaining}s`, this.width / 2 - 100 * this.scale, 80 * this.scale);
             this.ctx.shadowBlur = 0;
         }
     }
@@ -511,6 +579,7 @@ class Game {
         this.isJumping = false;
         this.jumpPower = 0;
         
+        this.setupCanvas();
         this.solarFlare = new SolarFlareManager(this);
         
         document.getElementById('gameOver').style.display = 'none';
@@ -525,13 +594,14 @@ class Game {
 }
 
 class Alien {
-    constructor(x, y) {
+    constructor(x, y, scale = 1) {
         this.x = x;
         this.y = y;
-        this.width = 20;
-        this.height = 30;
+        this.width = 20 * scale;
+        this.height = 30 * scale;
         this.targetX = x;
         this.glowPhase = Math.random() * Math.PI * 2;
+        this.scale = scale;
     }
     
     update() {
@@ -568,13 +638,14 @@ class Alien {
 }
 
 class Obstacle {
-    constructor(x, y, type) {
+    constructor(x, y, type, scale = 1) {
         this.x = x;
         this.y = y;
         this.type = type;
-        this.width = 30;
-        this.height = 40;
+        this.width = 30 * scale;
+        this.height = 40 * scale;
         this.animPhase = 0;
+        this.scale = scale;
     }
     
     draw(ctx) {
@@ -616,12 +687,13 @@ class Obstacle {
 }
 
 class Astronaut {
-    constructor(x, y) {
+    constructor(x, y, scale = 1) {
         this.x = x;
         this.y = y;
-        this.width = 20;
-        this.height = 30;
+        this.width = 20 * scale;
+        this.height = 30 * scale;
         this.type = 'astronaut';
+        this.scale = scale;
     }
     
     draw(ctx) {
@@ -645,13 +717,14 @@ class Astronaut {
 }
 
 class Crystal {
-    constructor(x, y) {
+    constructor(x, y, scale = 1) {
         this.x = x;
         this.y = y;
-        this.width = 15;
-        this.height = 15;
+        this.width = 15 * scale;
+        this.height = 15 * scale;
         this.type = 'crystal';
         this.rotation = 0;
+        this.scale = scale;
     }
     
     draw(ctx) {
@@ -672,13 +745,14 @@ class Crystal {
 }
 
 class PowerUp {
-    constructor(x, y, type) {
+    constructor(x, y, type, scale = 1) {
         this.x = x;
         this.y = y;
-        this.width = 25;
-        this.height = 25;
+        this.width = 25 * scale;
+        this.height = 25 * scale;
         this.type = type;
         this.pulse = 0;
+        this.scale = scale;
     }
     
     draw(ctx) {
@@ -744,6 +818,77 @@ class Particle {
         const alpha = this.life / this.maxLife;
         ctx.fillStyle = this.color.replace(')', `, ${alpha})`).replace('rgb', 'rgba');
         ctx.fillRect(this.x, this.y, 3, 3);
+    }
+}
+
+class UFOCollectible {
+    constructor(x, y, scale = 1) {
+        this.x = x;
+        this.y = y;
+        this.width = 35 * scale;
+        this.height = 25 * scale;
+        this.type = 'ufo';
+        this.hover = 0;
+        this.glow = 0;
+        this.bounce = 0;
+        this.scale = scale;
+    }
+    
+    draw(ctx) {
+        this.hover += 0.08;
+        this.glow += 0.12;
+        this.bounce += 0.15;
+        
+        const hoverOffset = Math.sin(this.hover) * 4;
+        const glowIntensity = Math.sin(this.glow) * 0.4 + 0.8;
+        const bounceScale = Math.sin(this.bounce) * 0.1 + 1;
+        
+        ctx.save();
+        ctx.translate(this.x + 17.5, this.y + 12.5 + hoverOffset);
+        ctx.scale(bounceScale, bounceScale);
+        
+        // Soft outer glow
+        ctx.shadowColor = '#ffb3ff';
+        ctx.shadowBlur = 25 * glowIntensity;
+        
+        // Marshmallow body (main)
+        ctx.fillStyle = '#fff0f5';
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 16, 10, 0, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Inner marshmallow highlight
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.ellipse(-3, -2, 8, 5, 0, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Happy face
+        ctx.fillStyle = '#ff69b4';
+        // Eyes
+        ctx.beginPath();
+        ctx.arc(-5, -2, 1.5, 0, Math.PI * 2);
+        ctx.arc(5, -2, 1.5, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Smile
+        ctx.strokeStyle = '#ff69b4';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(0, 2, 4, 0, Math.PI);
+        ctx.stroke();
+        
+        // Floating sparkles
+        ctx.fillStyle = `rgba(255, 182, 193, ${glowIntensity})`;
+        for (let i = 0; i < 6; i++) {
+            const angle = (this.glow + i * Math.PI / 3) % (Math.PI * 2);
+            const sparkleX = Math.cos(angle) * 20;
+            const sparkleY = Math.sin(angle) * 15;
+            ctx.fillRect(sparkleX, sparkleY, 2, 2);
+        }
+        
+        ctx.restore();
     }
 }
 
